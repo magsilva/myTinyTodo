@@ -1,61 +1,59 @@
 <?php
 
-# Copyright 2009 Max Pozdeev
+/*
+	(C) Copyright 2009 Max Pozdeev <maxpozdeev@gmail.com>
+	Licensed under the GNU GPL v2 license. See file COPYRIGHT for details.
+*/
 
 class DatabaseResult_Mysql
 {
-
-	var $parent;
-	var $q;
+	private $parent;
+	private $q;
 	var $query;
-	var $rows = NULL;
-	var $affected = NULL;
-	var $prefix = '';
+	var $prefix;
 
 	function __construct($query, &$h, $resultless = 0)
 	{
 		$this->parent = $h;
-		$this->query = $query;
+		$this->parent->lastQuery = $this->query = $query;
 
-		$this->q = mysql_query($query, $this->parent->dbh);
-
-		if(!$this->q)
+		if($resultless)
 		{
-			throw new Exception($this->parent->error());
+			$r = $this->parent->dbh->exec($query);
+			if($r === false) {
+				$ei = $this->parent->dbh->errorInfo();
+				throw new Exception($ei[2]);
+			}
+			$this->parent->affected = $r;
 		}
-	}
-
-	function affected()
-	{
-		if(is_null($this->affected))
+		else
 		{
-			$this->affected = mysql_affected_rows($this->parent->dbh);
+			$this->q = $this->parent->dbh->query($query);
+			if(!$this->q) {
+				$ei = $this->parent->dbh->errorInfo();
+				throw new Exception($ei[2]);
+			}
+			$this->parent->affected = $this->q->rowCount();
 		}
-		return $this->affected;
 	}
 
 	function fetch_row()
 	{
-		return mysql_fetch_row($this->q);
+		return $this->q->fetch(PDO::FETCH_NUM);
 	}
 
 	function fetch_assoc()
 	{
-		return mysql_fetch_assoc($this->q);
+		return $this->q->fetch(PDO::FETCH_ASSOC);
 	}
 
-	function rows()
-	{
-		if (!is_null($this -> rows)) return $this->rows;
-		$this->rows = mysql_num_rows($this->q);
-		return $this->rows;
-	}
 }
 
 class Database_Mysql
 {
 	var $dbh;
-	var $error_str;
+	var $affected = null;
+	var $lastQuery;
 
 	function __construct()
 	{
@@ -63,33 +61,21 @@ class Database_Mysql
 
 	function connect($host, $user, $pass, $db)
 	{
-		if(!$this->dbh = @mysql_connect($host,$user,$pass))
-		{
-			throw new Exception(mysql_error());
+		try {
+			$this->dbh = new PDO("mysql:host=".$host.";dbname=".$db.";charset=utf8",$user,$pass);
 		}
-		if( @!mysql_select_db($db, $this->dbh) )
-		{
-			throw new Exception($this->error());
+		catch(PDOException $e) {
+			throw new Exception($e->getMessage());
 		}
 		return true;
-	}
-
-	function last_insert_id()
-	{
-		return mysql_insert_id($this->dbh);
-	}	
-	
-	function error()
-	{
-		return mysql_error($this->dbh);
 	}
 
 	function sq($query, $p = NULL)
 	{
 		$q = $this->_dq($query, $p);
 
-		if($q->rows()) $res = $q->fetch_row();
-		else return NULL;
+		$res = $q->fetch_row();
+		if($res === false) return NULL;
 
 		if(sizeof($res) > 1) return $res;
 		else return $res[0];
@@ -99,18 +85,21 @@ class Database_Mysql
 	{
 		$q = $this->_dq($query, $p);
 
-		if($q->rows()) $res = $q->fetch_assoc();
-		else return NULL;
+		$res = $q->fetch_assoc();
+		if($res === false) return NULL;
 
 		if(sizeof($res) > 1) return $res;
 		else return $res[0];
 	}
-
+	
 	function dq($query, $p = NULL)
 	{
 		return $this->_dq($query, $p);
 	}
 
+	/* 
+		for resultless queries like INSERT,UPDATE
+	*/
 	function ex($query, $p = NULL)
 	{
 		return $this->_dq($query, $p, 1);
@@ -142,24 +131,29 @@ class Database_Mysql
 
 	function affected()
 	{
-		return	mysql_affected_rows($this->dbh);
+		return $this->affected;
 	}
 
 	function quote($s)
 	{
-		return '\''. addslashes($s). '\'';
+		return $this->dbh->quote($s);
 	}
 
 	function quoteForLike($format, $s)
 	{
-		$s = str_replace(array('%','_'), array('\%','\_'), addslashes($s));
-		return '\''. sprintf($format, $s). '\'';
+		$s = str_replace(array('\\','%','_'), array('\\\\','\%','\_'), $s);
+		return $this->dbh->quote(sprintf($format, $s)). " ESCAPE '\'";
+	}
+
+	function last_insert_id()
+	{
+		return $this->dbh->lastInsertId();
 	}
 
 	function table_exists($table)
 	{
-		$table = addslashes($table);
-		$q = mysql_query("SELECT 1 FROM `$table` WHERE 1=0", $this->dbh);
+		$table = $this->dbh->quote($table);
+		$q = $this->dbh->query("SELECT 1 FROM $table WHERE 1=0");
 		if($q === false) return false;
 		else return true;
 	}

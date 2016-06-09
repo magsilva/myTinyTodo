@@ -7,7 +7,7 @@ abbandoned there, a fork is created and further developed.
 System requirements
 -------------------
 * PHP 5.2.0 or greater;
-* PHP extensions: php_mysql (MySQL version), php_pdo and php_pdo_sqlite (SQLite version).
+* PHP extensions: php_pdo, php_pdo_mysql (MySQL version), php_pdo_sqlite (SQLite version).
 Tested browsers:
 * Internet Explorer 8
 * Firefox v3.6, v4
